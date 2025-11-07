@@ -1,0 +1,111 @@
+#include <iostream>
+#include <cstdlib>
+#include <ctime>
+#include <chrono>
+#include <cctype>
+
+using namespace std;
+
+void AddnewDrone();
+void ManagePackages();
+void ShowDrones();
+void PackageRegistry();
+void ExportRecords();
+void ImportRecords();
+void EndProgram();
+
+struct drone
+{
+    int droneID;
+    double maxPayload;
+    bool state; // este lo puse por si esta en entrega o disponible
+    string classd; // chico mediano o grande 
+    string modelname;
+};
+
+struct Package
+{
+    int ordernumber;
+    double weight;
+    string destination;
+    string status;
+    string description;
+};
+
+struct Node
+{
+    Package* PackageData;
+    Node* next;
+};
+
+void deleteTop(Node*& top);
+void CreatePackage(Node*& top);
+void readPackage(Node* top);
+void Liberar(Node*& top);
+
+void main()
+{
+    setlocale(LC_ALL,"es_:MX.UTF-8");
+       
+        Node* top = nullptr;
+    
+    char opcion = '0';
+
+    do
+        {
+                cout << "Menú de opciones:\n";
+                cout << "Seleccione una opción: ";
+
+                    cout << "1. Habilitar nuevo dron en la red \n";
+                    cout << "2. Gestion de paquetes (Crear y enviar) \n";
+                    cout << "3. Listado de drones\n";
+                    cout << "4. Registro de paqueteria\n";
+                    cout << "5. Exportar registros (CSV) \n";
+                    cout << "6. Importar registros (Csv) \n";
+                    cout << "E. Salir del programa \n";
+
+                        cout << "Escriba el numero de la opción deseada o 'E' para salir: ";
+                             cin >> opcion;
+                        cin.ignore();
+                    
+                        if (opcion >= 'a' && opcion <= 'z')
+                            {
+                                opcion = toupper(opcion); 
+                            }
+                        
+                switch (opcion)
+                    {
+                        case '1':
+                            AddnewDrone();
+                            break;
+                        case '2':
+                            ManagePackages();
+                            break;
+                        case '3':
+                            ShowDrones();
+                            break;
+                        case '4':
+                            PackageRegistry();
+                            break;
+                        case '5':
+                            ExportRecords();
+                            break;
+                        case '6':
+                            ImportRecords();
+                            break;
+                        case 'E':
+                            EndProgram();
+                            break;
+                        default:
+                            cout << "Opción inválida. Por favor, seleccione una opción del menú.\n";
+                            break;
+                    }
+            
+            if(opcion < '1' || (opcion > '6' && opcion != 'E'))
+                {
+                    cout << "Opción no válida. Por favor, seleccione una opción del menú.\n";
+                }
+   
+        } while (opcion != 'E');
+}
+
