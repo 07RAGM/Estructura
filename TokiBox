@@ -6,6 +6,7 @@
 
 using namespace std;
 
+//Funciones
 void AddnewDrone();
 void ManagePackages();
 void ShowDrones();
@@ -13,7 +14,12 @@ void PackageRegistry();
 void ExportRecords();
 void ImportRecords();
 void EndProgram();
+void deleteTop(Node*& top);
+void CreatePackage(Node*& top);
+void readPackage(Node* top);
+void Liberar(Node*& top);
 
+// Estructuras
 struct drone
 {
     int droneID;
@@ -32,17 +38,15 @@ struct Package
     string description;
 };
 
-struct Node
+struct Node 
 {
     Package* PackageData;
     Node* next;
 };
 
-void deleteTop(Node*& top);
-void CreatePackage(Node*& top);
-void readPackage(Node* top);
-void Liberar(Node*& top);
+//FUNCIONES
 
+//MAIN
 void main()
 {
     setlocale(LC_ALL,"es_:MX.UTF-8");
