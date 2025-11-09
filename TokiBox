@@ -13,14 +13,20 @@ void PackageRegistry();
 void ExportRecords();
 void ImportRecords();
 void EndProgram();
+void deleteTop(NodePackages*& top);
+void CreatePackage(NodePackages*& top);
+void readPackage(NodePackages* top);
+void Liberar(NodePackages*& top);
+
 
 struct drone
 {
     int droneID;
     double maxPayload;
-    bool state; // este lo puse por si esta en entrega o disponible
+    bool state; // este lo puse por si esta en entrega (true) o disponible(false)
     string classd; // chico mediano o grande 
     string modelname;
+    double speed;
 };
 
 struct Package
@@ -32,22 +38,26 @@ struct Package
     string description;
 };
 
-struct Node
+struct NodeDrones {
+    drone* droneData;
+    NodeDrones* next;
+    NodeDrones* prev;
+    }
+
+struct NodePackages
 {
     Package* PackageData;
-    Node* next;
+    NodePackages* next;
+    NodePackages* prev;
 };
-
-void deleteTop(Node*& top);
-void CreatePackage(Node*& top);
-void readPackage(Node* top);
-void Liberar(Node*& top);
 
 void main()
 {
-    setlocale(LC_ALL,"es_:MX.UTF-8");
+    setlocale(LC_ALL,"es_:MX.UTF-8")
        
-        Node* top = nullptr;
+    NodePackages* top = nullptr;
+    NodeDrones* droneHead = nullptr;
+
     
     char opcion = '0';
 
@@ -59,9 +69,11 @@ void main()
                     cout << "1. Habilitar nuevo dron en la red \n";
                     cout << "2. Gestion de paquetes (Crear y enviar) \n";
                     cout << "3. Listado de drones\n";
-                    cout << "4. Registro de paqueteria\n";
-                    cout << "5. Exportar registros (CSV) \n";
-                    cout << "6. Importar registros (Csv) \n";
+                    cout << "4. Gestión de drones (enviar y recibir)\n";
+                    cout << "5. Modificación de drones\n"; 
+                    cout << "6. Registro de paqueteria\n";
+                    cout << "7. Exportar registros (CSV) \n";
+                    cout << "8. Importar registros (Csv) \n";
                     cout << "E. Salir del programa \n";
 
                         cout << "Escriba el numero de la opción deseada o 'E' para salir: ";
@@ -85,12 +97,18 @@ void main()
                             ShowDrones();
                             break;
                         case '4':
-                            PackageRegistry();
+                            gestionDrone(droneHead);
                             break;
                         case '5':
+                           modifyDrone(droneHead);
+                           break;
+                        case '6':
+                            PackageRegistry();
+                            break;
+                        case '7':
                             ExportRecords();
                             break;
-                        case '6':
+                        case '8':
                             ImportRecords();
                             break;
                         case 'E':
@@ -101,7 +119,7 @@ void main()
                             break;
                     }
             
-            if(opcion < '1' || (opcion > '6' && opcion != 'E'))
+            if(opcion < '1' || (opcion > '8' && opcion != 'E'))
                 {
                     cout << "Opción no válida. Por favor, seleccione una opción del menú.\n";
                 }
@@ -109,3 +127,102 @@ void main()
         } while (opcion != 'E');
 }
 
+// BUSCAR DRON
+Node* findDrone(NodeDrones* head, int droneID) {
+    Node* temp = head;
+    while (temp) {
+        if (temp->droneData->droneID == droneID)
+            return temp;  // Retorna el nodo donde se encontró el dron
+        temp = temp->next;
+    }
+    return nullptr;  // Si no se encontró
+}
+
+// MODIFICAR DRON
+void modifyDrone(NodeDrones* head) {
+    int id;
+    cout << "Ingrese el ID del dron a modificar: ";
+    cin >> id; 
+    cin.ignore();
+
+    Node* node = findDrone(head, id);
+    if (!node) {
+        cout << "Dron no encontrado.\n";
+        return;
+    }
+
+    drone* d = node->droneData;
+
+    if (d->state) {
+        cout << "El dron está actualmente en entrega y no puede modificarse.\n";
+        return;
+    }
+
+    cout << "\nModificando dron ID " << d->droneID << endl;
+
+    cout << "Peso máximo actual: " << d->maxPayload << " kg\n";
+    cout << "Ingrese nuevo peso máximo: ";
+    cin >> d->maxPayload; 
+    cin.ignore();
+
+    cout << "Velocidad actual: " << d->speed << " m/s\n";
+    cout << "Ingrese nueva velocidad: ";
+    cin >> d->speed; 
+    cin.ignore();
+
+    cout << "\nDron actualizado correctamente.\n";
+}
+
+//GESTION DE DRONE (enviar o recibir) (extensión de modificar drone)
+void gestionDrone(NodeDrones* head) {
+    int id;
+    cout << "Ingrese el ID del dron: ";
+    cin >> id;
+    cin.ignore();
+
+    Node* node = findDrone(head, id);
+    if (!node) {
+        cout << "Dron no encontrado.\n";
+        return;
+    }
+
+    drone* d = node->droneData;
+
+    cout << "\n Información del dron:\n";
+    cout << "ID: " << d->droneID << "\n";
+    cout << "Modelo: " << d->modelname << "\n";
+    cout << "Clase: " << d->classd << "\n";
+    cout << "Peso máximo: " << d->maxPayload << " kg\n";
+    cout << "Velocidad: " << d->speed << " m/s\n";
+
+    if (d->state) {
+        cout << "\n Estado actual: EN OPERACIÓN\n";
+        cout << "¿Desea terminar la operación?\n";
+        cout << "1. Sí\n2. No\n> ";
+        int opcion;
+        cin >> opcion;
+        cin.ignore();
+
+        if (opcion == 1) {
+            d->state = false;
+            cout << "Operación finalizada. El dron ahora está disponible.\n";
+        } else {
+            cout << " No se realizaron cambios.\n";
+        }
+    } 
+    else {
+        cout << "\n Estado actual: DISPONIBLE\n";
+        cout << "¿Desea enviarlo a operación?\n";
+        cout << "1. Sí\n2. No\n> ";
+        int opcion;
+        cin >> opcion;
+        cin.ignore();
+
+        if (opcion == 1) {
+            d->state = true;
+            cout << " El dron ha sido enviado a operación.\n";
+        } else {
+            cout << " No se realizaron cambios.\n";
+        }
+    }
+}
