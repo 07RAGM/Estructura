@@ -127,6 +127,97 @@ void main()
         } while (opcion != 'E');
 }
 
+
+// Minifunciones de ayuda
+
+string formatoTiempo(time_t t) {
+    if (t <= 0) return "—";
+    char buf[20];
+    strftime(buf, sizeof(buf), "%H:%M:%S", localtime(&t)); // HH:MM:SS
+    return string(buf);
+}
+
+double distanciaKm(int x, int y) {
+    return hypot(x, y);
+}
+
+string estadoPaquete(const Paquete& p) {
+    return p.entregado ? "Entregado" : "En proceso";
+}
+
+string horaLlegadaTexto(const Paquete& p, const vector<Dron>& drones, time_t ahora) {
+    if (p.entregado) return formatoTiempo(p.horaLlegada);
+
+    if (p.dronAsignado >= 0 && p.dronAsignado < (int)drones.size()) {
+        const Dron& d = drones[p.dronAsignado];
+        if (d.velocidad > 0.0f && p.horaSalida > 0) {
+            const double distKm = distanciaKm(p.xDestino, p.yDestino);
+            const double travelSec = (distKm / d.velocidad) * 3600.0; // km / (km/h) -> h -> s
+            const time_t eta = static_cast<time_t>(p.horaSalida + (time_t)round(travelSec));
+            return (ahora >= eta) ? formatoTiempo(eta) : "En proceso";
+        } else {
+            return "En proceso";
+        }
+    }
+    return "sin dron asignado";
+}
+
+// Listados
+void listadoDrones() {
+    cout << setfill('-') << setw(70) << "" << "\n";
+    cout << left << setfill(' ')
+         << "|" << setw(12) << "ID" << "|"
+         << setw(18) << "Velocidad(km/h)" << "|"
+         << setw(14) << "CargaMax(kg)"    << "|"
+         << setw(12) << "Disponible"      << "|\n";
+    cout << setfill('-') << setw(70) << "" << "\n";
+
+    for (size_t i = 0; i < drones.size(); i++) {
+        cout << left << setfill(' ')
+             << "|" << setw(12) << drones[i].id
+             << "|" << setw(18) << drones[i].velocidad
+             << "|" << setw(14) << drones[i].cargaMax
+             << "|" << setw(12) << (drones[i].disponible ? "Sí" : "No") << "|\n";
+    }
+    cout << setfill('-') << setw(70) << "" << "\n\n";
+}
+
+void listadoPaquetes() {
+    cout << setfill('-') << setw(120) << "" << "\n";
+    cout << left << setfill(' ')
+         << "|" << setw(10) << "ID"
+         << "|" << setw(10) << "Peso(kg)"
+         << "|" << setw(12) << "X Dest"
+         << "|" << setw(12) << "Y Dest"
+         << "|" << setw(12) << "Estado"
+         << "|" << setw(12) << "Hora Salida"
+         << "|" << setw(12) << "Hora Llegada" << "|\n";
+    cout << setfill('-') << setw(120) << "" << "\n";
+
+    const time_t ahora = time(nullptr); // tiempo actual
+
+    for (size_t i = 0; i < paquetes.size(); i++) {
+        const Paquete& p = paquetes[i];
+        const string estado = estadoPaquete(p);
+        const string horaSalidaStr = formatoTiempo(p.horaSalida);
+        const string horaLlegadaStr = horaLlegadaTexto(p, drones, ahora);
+
+        cout << left << setfill(' ')
+             << "|" << setw(10) << p.id
+             << "|" << setw(10) << p.peso
+             << "|" << setw(12) << p.xDestino
+             << "|" << setw(12) << p.yDestino
+             << "|" << setw(12) << estado
+             << "|" << setw(12) << horaSalidaStr
+             << "|" << setw(12) << horaLlegadaStr << "|\n";
+    }
+    cout << setfill('-') << setw(120) << "" << "\n\n";
+}
+
+
+
+
+
 // BUSCAR DRON
 Node* findDrone(NodeDrones* head, int droneID) {
     Node* temp = head;
