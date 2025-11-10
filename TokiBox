@@ -226,3 +226,39 @@ void gestionDrone(NodeDrones* head) {
         }
     }
 }
+void deleteDrone(NodeDrones*& head) {
+    if(!head) {
+        cout << "No hay drones en la lista.\n";
+        return;
+    }
+
+    int TargetID;
+    cout << "Seleccione el ID del dron a eliminar:\n";
+    ShowDrones();
+    cin >> TargetID;
+    cin.ignore();
+
+    NodeDrones* current = findDrone(head, TargetID);
+    if(!current) {
+        cout << "No se encontró un dron con ese ID.\n";
+        return;
+    }
+
+    if(current->droneData->state) {
+        cout << "El dron está en operación y no se puede eliminar.\n";
+        return;
+    }
+
+    if(current->prev)
+        current->prev->next = current->next;
+    else
+        head = current->next;
+
+    if(current->next)
+        current->next->prev = current->prev;
+
+    delete current->droneData;
+    delete current;
+
+    cout << "Dron eliminado correctamente.\n\n";
+}
