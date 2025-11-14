@@ -353,3 +353,142 @@ void deleteDrone(NodeDrones*& head) {
 
     cout << "Dron eliminado correctamente.\n\n";
 }
+//exportar
+void ExportRecords()
+{
+    // Candado: verificar si todos los paquetes están entregados
+    NodePackages* temp = top;
+
+    while (temp != nullptr)
+    {
+        if (temp->PackageData->status != "Entregado")
+        {
+            cout << "\n⚠ No se puede exportar.\n"
+                 << "Hay paquetes pendientes de entrega.\n"
+                 << "Complete todas las entregas antes de exportar.\n";
+            return;
+        }
+        temp = temp->next;
+    }
+
+    ofstream file("registros.csv");
+
+    if (!file)
+    {
+        cout << "Error al crear el archivo.\n";
+        return;
+    }
+
+    file << "TIPO,ID/Pedido,Peso/MaxPayload,Destino/Clase,Estado,Descripcion/Modelo,Velocidad\n";
+
+    // Exportación de datos de drones
+    NodeDrones* dtemp = droneHead;
+    while (dtemp != nullptr)
+    {
+        drone* d = dtemp->droneData;
+
+        file << "DRON,"
+             << d->droneID << ","
+             << d->maxPayload << ","
+             << d->classd << ","
+             << (d->state ? "EnOperacion" : "Disponible") << ","
+             << d->modelname << ","
+             << d->speed << "\n";
+
+        dtemp = dtemp->next;
+    }
+
+    // Exportación de paquetes
+    temp = top;
+    while (temp != nullptr)
+    {
+        Package* p = temp->PackageData;
+
+        file << "PAQUETE,"
+             << p->ordernumber << ","
+             << p->weight << ","
+             << p->destination << ","
+             << p->status << ","
+             << p->description << ",\n";
+
+        temp = temp->next;
+    }
+
+    file.close();
+    cout << "\n Archivo 'registros.csv' exportado correctamente.\n";
+}
+
+//Importar 
+void ImportRecords()
+{
+    ifstream file("registros.csv");
+
+    if (!file)
+    {
+        cout << "No se encontró el archivo 'registros.csv'.\n";
+        return;
+    }
+
+    string line;
+    getline(file, line); // Leer encabezado
+
+    while (getline(file, line))
+    {
+        stringstream ss(line);
+        string type;
+
+        getline(ss, type, ',');
+
+        if (type == "DRON")
+        {
+            drone* d = new drone;
+
+            string temp;
+
+            getline(ss, temp, ',');   d->droneID = stoi(temp);
+            getline(ss, temp, ',');   d->maxPayload = stod(temp);
+            getline(ss, d->classd, ',');
+            getline(ss, temp, ',');   d->state = (temp == "EnOperacion");
+            getline(ss, d->modelname, ',');
+            getline(ss, temp, ',');   d->speed = stod(temp);
+
+            // Insertar en lista
+            NodeDrones* nuevo = new NodeDrones;
+            nuevo->droneData = d;
+            nuevo->next = droneHead;
+            nuevo->prev = nullptr;
+
+            if (droneHead)
+                droneHead->prev = nuevo;
+
+            droneHead = nuevo;
+        }
+
+        else if (type == "PAQUETE")
+        {
+            Package* p = new Package;
+
+            string temp;
+
+            getline(ss, temp, ',');   p->ordernumber = stoi(temp);
+            getline(ss, temp, ',');   p->weight = stod(temp);
+            getline(ss, p->destination, ',');
+            getline(ss, p->status, ',');
+            getline(ss, p->description, ',');
+
+            // Insertar en lista
+            NodePackages* nuevo = new NodePackages;
+            nuevo->PackageData = p;
+            nuevo->next = top;
+            nuevo->prev = nullptr;
+
+            if (top)
+                top->prev = nuevo;
+
+            top = nuevo;
+        }
+    }
+
+    file.close();
+    cout << "\n Registros importados correctamente.\n";
+}
