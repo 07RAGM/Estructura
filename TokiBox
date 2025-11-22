@@ -1,5 +1,3 @@
-//VERSION SIN LA FUNCION DE LA ASIGNACION DEL DRON CUANDO REGRESA A BASE. Y SIN ELIMINAR DOS VARIABLES DUPLICADAS
-
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
@@ -12,6 +10,8 @@
 #include <fstream>
 #include <sstream>
 #include <clocale>
+#include <limits>
+
 
 using namespace std;
 using Clock = chrono::system_clock;
@@ -19,29 +19,27 @@ using Clock = chrono::system_clock;
 struct drone
 {
     int id;                 // ID único del dron
-    double pesoMaximo;      // antes maxPayload
-    double cargaMaxima;     // antes cargaMax
+    double pesoMaximo;
+    double cargaMaxima;
     double velocidad;       // km/h
-    bool estado;            // antes state BORRAR
-    bool disponible;
-    char clase;             // antes classd
-    string modelo;          // antes modelname
+    bool disponible;        // true = puede tomar paquete, false = en misión
+    char clase;
+    string modelo;
 };
 
 struct Package
 {
-    int numOrden;                     // antes ordernumber BORRAR
-    int id;
+    int numOrden;                 // ID lógico del paquete
     double peso;
     int xDestino = 0;
     int yDestino = 0;
-    string estado;                       // antes status
-    string descripcion;                  // antes description
-    Clock::time_point tiempoCreacion;    // antes creationTime
+    string estado;                   // pendiente, En ruta, Entregado
+    string descripcion;
+    Clock::time_point tiempoCreacion;
     time_t horaSalida = 0;
     time_t horaLlegada = 0;
     bool entregado = false;
-    int dronAsignado = -1;
+    int dronAsignado = -1;           // índice en el vector drones
 };
 
 struct Node
@@ -50,27 +48,6 @@ struct Node
     Node* next;
     Node* prev;
 };
-
-// Prototipos
-void AgregarNuevoDron();
-void GestionarPaquetes();
-void ListarDrones(const vector<drone>& listaDrones);
-void ExportarRegistros();
-void ImportarRegistros();
-void FinalizarPrograma();
-
-void CrearPaquete(Node*& head, Node*& tail);
-void ListarPaquetes(const vector<Package>& listaPaquetes);
-void ModificarPaquete(Node*& head, Node*& tail);
-void EliminarPaquete(Node*& head, Node*& tail, int numOrden);
-void LeerPaquetes(Node* head);
-void LiberarPaquetes(Node*& head, Node*& tail);
-int GetPackageAgeInSeconds(const Package* paquete);
-
-string formatoTiempo(time_t t);
-double distanciaKm(int x, int y);
-string estadoPaquete(const Package& paquete);
-string horaLlegadaTexto(const Package& paquete, const vector<drone>& listaDrones, time_t ahora);
 
 // Variables globales
 vector<drone> drones;
@@ -82,50 +59,163 @@ Node* tailPackages = nullptr;
 vector<Package> paquetes;
 int nextnumOrden = 1;
 
-int main()
-{
-    setlocale(LC_ALL, "es_MX.UTF-8");
-    char opcion = '0';
+// {=======FUNCIONES AUXILIARES =======}
 
-    do
-    {
-        system("cls");
-        cout << "\n=== Menú de opciones ===\n";
-        cout << "1. Habilitar nuevo dron en la red \n";
-        cout << "2. Gestión de paquetes (Crear y administrar) \n";
-        cout << "3. Listado de drones\n";
-        cout << "4. Registro de paquetería\n";
-        cout << "5. Exportar registros (CSV) \n";
-        cout << "6. Importar registros (CSV) \n";
-        cout << "E. Salir del programa \n";
-        cout << "\nEscriba el número de la opción deseada o 'E' para salir: ";
-        
-        string linea;
-        if (!getline(cin, linea)) break;
-        size_t posicion = linea.find_first_not_of(" \t\r\n");
-        opcion = (posicion == string::npos) ? '\0' : linea[posicion];
-        if (isalpha(static_cast<unsigned char>(opcion)))
-            opcion = toupper(static_cast<unsigned char>(opcion));
+string formatoTiempo(time_t t) {
+    if (t <= 0) return "—";
+    char buf[20];
+    strftime(buf, sizeof(buf), "%H:%M:%S", localtime(&t));
+    return string(buf);
+}
 
-        switch (opcion)
-        {
-            case '1': AgregarNuevoDron(); break;
-            case '2': GestionarPaquetes(); break;
-            case '3': ListarDrones(drones); break;
-            case '4': ListarPaquetes(paquetes); break;
-            case '5': ExportarRegistros(); break;
-            case '6': ImportarRegistros(); break;
-            case 'E': FinalizarPrograma(); break;
-            default:
-                cout << "Opción inválida. Por favor, seleccione una opción del menú.\n";
-                system("pause");
-                break;
+double distanciaKm(int x, int y) {
+    return hypot((double)x, (double)y);
+}
+
+string estadoPaquete(const Package& paquete) {
+    if (paquete.entregado) return "Entregado";
+    if (!paquete.estado.empty()) return paquete.estado;
+    return "En proceso";
+}
+
+string horaLlegadaTexto(const Package& paquete, const vector<drone>& listaDrones, time_t ahora) {
+    if (paquete.entregado) return formatoTiempo(paquete.horaLlegada);
+
+    if (paquete.dronAsignado >= 0 && paquete.dronAsignado < (int)listaDrones.size()) {
+        const drone& d = listaDrones[paquete.dronAsignado];
+        if (d.velocidad > 0.0 && paquete.horaSalida > 0) {
+            const double distKm = distanciaKm(paquete.xDestino, paquete.yDestino);
+            const double tiempoSeg = (distKm / d.velocidad) * 3600.0;
+            const time_t eta = paquete.horaSalida + (time_t)llround(tiempoSeg);
+            return (ahora >= eta) ? formatoTiempo(eta) : "En proceso";
+        } else {
+            return "En proceso";
         }
+    }
+    return "Sin dron asignado";
+}
 
-    } while (opcion != 'E');
+void ListarDrones(const vector<drone>& listaDrones) {
+    cout << setfill('-') << setw(70) << "" << "\n";
+    cout << left << setfill(' ')
+         << "|" << setw(12) << "ID"
+         << "|" << setw(18) << "Velocidad(km/h)"
+         << "|" << setw(14) << "CargaMax(kg)"
+         << "|" << setw(12) << "Disponible" << "|\n";
+    cout << setfill('-') << setw(70) << "" << "\n";
 
-    LiberarPaquetes(headPackages, tailPackages);
-    return 0;
+    for (size_t i = 0; i < listaDrones.size(); i++) {
+        cout << left << setfill(' ')
+             << "|" << setw(12) << listaDrones[i].id
+             << "|" << setw(18) << listaDrones[i].velocidad
+             << "|" << setw(14) << listaDrones[i].cargaMaxima
+             << "|" << setw(12) << (listaDrones[i].disponible ? "Sí" : "No") << "|\n";
+    }
+    cout << setfill('-') << setw(70) << "" << "\n\n";
+}
+
+void ListarPaquetes(const vector<Package>& listaPaquetes) {
+    cout << setfill('-') << setw(120) << "" << "\n";
+    cout << left << setfill(' ')
+         << "|" << setw(10) << "Orden"
+         << "|" << setw(10) << "Peso(kg)"
+         << "|" << setw(12) << "X Dest"
+         << "|" << setw(12) << "Y Dest"
+         << "|" << setw(12) << "Estado"
+         << "|" << setw(12) << "Hora Salida"
+         << "|" << setw(12) << "Hora Llegada" << "|\n";
+    cout << setfill('-') << setw(120) << "" << "\n";
+
+    const time_t ahora = time(nullptr);
+
+    for (size_t i = 0; i < listaPaquetes.size(); i++) {
+        const Package& paquete = listaPaquetes[i];
+        const string estado = estadoPaquete(paquete);
+        const string horaSalidaStr = formatoTiempo(paquete.horaSalida);
+        const string horaLlegadaStr = horaLlegadaTexto(paquete, drones, ahora);
+
+        cout << left << setfill(' ')
+             << "|" << setw(10) << paquete.numOrden
+             << "|" << setw(10) << paquete.peso
+             << "|" << setw(12) << paquete.xDestino
+             << "|" << setw(12) << paquete.yDestino
+             << "|" << setw(12) << estado
+             << "|" << setw(12) << horaSalidaStr
+             << "|" << setw(12) << horaLlegadaStr << "|\n";
+    }
+    cout << setfill('-') << setw(120) << "" << "\n\n";
+}
+
+int GetPackageAgeInSeconds(const Package* paquete)
+{
+    auto ahora = Clock::now();
+    auto duracion = chrono::duration_cast<chrono::seconds>(ahora - paquete->tiempoCreacion);
+    return static_cast<int>(duracion.count());
+}
+
+void LiberarPaquetes(Node*& head, Node*& tail)
+{
+    while (head)
+    {
+        Node* temp = head;
+        head = head->next;
+        delete temp->paqueteData;
+        delete temp;
+    }
+    tail = nullptr;
+    paquetes.clear();
+}
+
+// ============= DRONES / PAQUETES ==========
+
+void ActualizarDisponibilidadDrones()
+{
+    time_t ahora = time(nullptr);
+
+    Node* actual = headPackages;
+    while (actual != nullptr)
+    {
+        Package* p = actual->paqueteData;
+        if (p && p->dronAsignado >= 0 && p->dronAsignado < (int)drones.size() && p->horaSalida > 0)
+        {
+            drone &d = drones[p->dronAsignado];
+
+            if (d.velocidad > 0.0)
+            {
+                double distKm = distanciaKm(p->xDestino, p->yDestino);
+                double tiempoIdaSeg = (distKm / d.velocidad) * 3600.0;
+
+                time_t tLlegada = p->horaSalida + (time_t)llround(tiempoIdaSeg);
+                time_t tRegreso = p->horaSalida + (time_t)llround(2 * tiempoIdaSeg);
+
+                // Marca paquete como entregado al alcanzar destino
+                if (!p->entregado && ahora >= tLlegada)
+                {
+                    p->entregado = true;
+                    p->horaLlegada = tLlegada;
+                    p->estado = "Entregado";
+                }
+
+                // Marca dron como disponible al regresar a base
+                if (!d.disponible && ahora >= tRegreso)
+                {
+                    d.disponible = true;
+                    p->dronAsignado = -1;
+                }
+
+                // Sincronizar con el vector 'paquetes'
+                for (auto &paqVec : paquetes)
+                {
+                    if (paqVec.numOrden == p->numOrden)
+                    {
+                        paqVec = *p;
+                        break;
+                    }
+                }
+            }
+        }
+        actual = actual->next;
+    }
 }
 
 void AgregarNuevoDron()
@@ -166,8 +256,7 @@ void AgregarNuevoDron()
         return;
     }
 
-    dronNuevo.velocidad = 50.0;   // km/h
-    dronNuevo.estado = false;
+    dronNuevo.velocidad = 50.0; // km/h
     dronNuevo.disponible = true;
 
     drones.push_back(dronNuevo);
@@ -176,58 +265,10 @@ void AgregarNuevoDron()
     system("pause");
 }
 
-void GestionarPaquetes()
-{
-    system("cls");
-    cout << "\n=== Gestión de paquetes ===\n";
-    cout << "1. Crear nuevo paquete\n";
-    cout << "2. Modificar paquete (primeros 4 minutos)\n";
-    cout << "3. Eliminar paquete (primeros 4 minutos)\n";
-    cout << "4. Volver al menú principal\n";
-    cout << "Selecciona una opción: ";
-    
-    char opcion;
-    if (!cin.get(opcion)) return;
-    cin.ignore();
-
-    switch (opcion)
-    {
-        case '1':
-            CrearPaquete(headPackages, tailPackages);
-            break;
-        case '2':
-            ModificarPaquete(headPackages, tailPackages);
-            break;
-        case '3':
-        {
-            cout << "Ingresa el número de orden a eliminar: ";
-            int numOrden;
-            cin >> numOrden;
-            cin.ignore();
-            EliminarPaquete(headPackages, tailPackages, numOrden);
-            break;
-        }
-        case '4':
-            return;
-        default:
-            cout << "Opción inválida.\n";
-            break;
-    }
-    system("pause");
-}
-
-int GetPackageAgeInSeconds(const Package* paquete)
-{
-    auto ahora = Clock::now();
-    auto duracion = chrono::duration_cast<chrono::seconds>(ahora - paquete->tiempoCreacion);
-    return static_cast<int>(duracion.count());
-}
-
 void CrearPaquete(Node*& head, Node*& tail)
 {
     Package* paqueteNuevo = new Package;
     paqueteNuevo->numOrden = nextnumOrden++;
-    paqueteNuevo->id = paqueteNuevo->numOrden;
     paqueteNuevo->tiempoCreacion = Clock::now();
     paqueteNuevo->horaSalida = 0;
     paqueteNuevo->horaLlegada = 0;
@@ -253,6 +294,32 @@ void CrearPaquete(Node*& head, Node*& tail)
     getline(cin, paqueteNuevo->descripcion);
 
     paqueteNuevo->estado = "pendiente";
+
+    // Asignar dron automáticamente si hay uno disponible con capacidad suficiente
+    int indiceDronAsignado = -1;
+    for (int i = 0; i < (int)drones.size(); ++i)
+    {
+        if (drones[i].disponible && drones[i].cargaMaxima >= paqueteNuevo->peso)
+        {
+            indiceDronAsignado = i;
+            break;
+        }
+    }
+
+    if (indiceDronAsignado != -1)
+    {
+        paqueteNuevo->dronAsignado = indiceDronAsignado;
+        paqueteNuevo->horaSalida = time(nullptr);  // AQUÍ COMIENZA EL VIAJE
+        paqueteNuevo->estado = "En ruta";
+
+        drones[indiceDronAsignado].disponible = false;
+
+        cout << "Paquete asignado al dron ID " << drones[indiceDronAsignado].id << ".\n";
+    }
+    else
+    {
+        cout << "No hay drones disponibles con capacidad suficiente. Paquete queda pendiente.\n";
+    }
 
     Node* nodoNuevo = new Node;
     nodoNuevo->paqueteData = paqueteNuevo;
@@ -302,9 +369,11 @@ void ModificarPaquete(Node*& head, Node*& tail)
             if (edadSegundos > 120)
             {
                 cout << "\nAdvertencia: Este paquete será enviado en los próximos 2 minutos.\n";
+                return;
             }
 
             cout << "\nDatos actuales del paquete:\n";
+            cout << "Número de orden: " << actual->paqueteData->numOrden << "\n";
             cout << "Peso: " << actual->paqueteData->peso << " kg\n";
             cout << "Coordenadas destino: (" << actual->paqueteData->xDestino << ", " << actual->paqueteData->yDestino << ")\n";
             cout << "Descripción: " << actual->paqueteData->descripcion << "\n";
@@ -338,7 +407,8 @@ void ModificarPaquete(Node*& head, Node*& tail)
                 case '3':
                     cout << "Nuevo estado: ";
                     getline(cin, actual->paqueteData->estado);
-                    actual->paqueteData->entregado = (actual->paqueteData->estado == "entregado" || actual->paqueteData->estado == "Entregado");
+                    actual->paqueteData->entregado =
+                        (actual->paqueteData->estado == "entregado" || actual->paqueteData->estado == "Entregado");
                     cout << "Estado actualizado.\n";
                     break;
                 case '4':
@@ -364,7 +434,7 @@ void ModificarPaquete(Node*& head, Node*& tail)
             // Actualizar también en el vector de paquetes
             for (auto &paquete : paquetes)
             {
-                if (paquete.id == actual->paqueteData->numOrden)
+                if (paquete.numOrden == actual->paqueteData->numOrden)
                 {
                     paquete = *actual->paqueteData;
                     break;
@@ -395,6 +465,7 @@ void EliminarPaquete(Node*& head, Node*& tail, int numOrden)
             if (edadSegundos > 120)
             {
                 cout << "Advertencia: Este paquete será enviado en los próximos 2 minutos.\n";
+                return;
             }
 
             if (actual->prev) actual->prev->next = actual->next;
@@ -406,7 +477,7 @@ void EliminarPaquete(Node*& head, Node*& tail, int numOrden)
             // Borrar también del vector
             for (auto it = paquetes.begin(); it != paquetes.end(); ++it)
             {
-                if (it->id == numOrden)
+                if (it->numOrden == numOrden)
                 { 
                     paquetes.erase(it); 
                     break; 
@@ -428,102 +499,6 @@ void LeerPaquetes(Node* head)
 {
     (void)head; // No se usa, tiramos de vector
     ListarPaquetes(paquetes);
-}
-
-void LiberarPaquetes(Node*& head, Node*& tail)
-{
-    while (head)
-    {
-        Node* temp = head;
-        head = head->next;
-        delete temp->paqueteData;
-        delete temp;
-    }
-    tail = nullptr;
-    paquetes.clear();
-}
-
-string formatoTiempo(time_t t) {
-    if (t <= 0) return "—";
-    char buf[20];
-    strftime(buf, sizeof(buf), "%H:%M:%S", localtime(&t));
-    return string(buf);
-}
-
-double distanciaKm(int x, int y) {
-    return hypot((double)x, (double)y);
-}
-
-string estadoPaquete(const Package& paquete) {
-    return paquete.entregado ? "Entregado" : "En proceso";
-}
-
-string horaLlegadaTexto(const Package& paquete, const vector<drone>& listaDrones, time_t ahora) {
-    if (paquete.entregado) return formatoTiempo(paquete.horaLlegada);
-
-    if (paquete.dronAsignado >= 0 && paquete.dronAsignado < (int)listaDrones.size()) {
-        const drone& d = listaDrones[paquete.dronAsignado];
-        if (d.velocidad > 0.0 && paquete.horaSalida > 0) {
-            const double distKm = distanciaKm(paquete.xDestino, paquete.yDestino);
-            const double tiempoSeg = (distKm / d.velocidad) * 3600.0;
-            const time_t eta = static_cast<time_t>(paquete.horaSalida + (time_t)llround(tiempoSeg));
-            return (ahora >= eta) ? formatoTiempo(eta) : "En proceso";
-        } else {
-            return "En proceso";
-        }
-    }
-    return "Sin dron asignado";
-}
-
-void ListarDrones(const vector<drone>& listaDrones) {
-    cout << setfill('-') << setw(70) << "" << "\n";
-    cout << left << setfill(' ')
-         << "|" << setw(12) << "ID"
-         << "|" << setw(18) << "Velocidad(km/h)"
-         << "|" << setw(14) << "CargaMax(kg)"
-         << "|" << setw(12) << "Disponible" << "|\n";
-    cout << setfill('-') << setw(70) << "" << "\n";
-
-    for (size_t i = 0; i < listaDrones.size(); i++) {
-        cout << left << setfill(' ')
-             << "|" << setw(12) << listaDrones[i].id
-             << "|" << setw(18) << listaDrones[i].velocidad
-             << "|" << setw(14) << listaDrones[i].cargaMaxima
-             << "|" << setw(12) << (listaDrones[i].disponible ? "Sí" : "No") << "|\n";
-    }
-    cout << setfill('-') << setw(70) << "" << "\n\n";
-}
-
-void ListarPaquetes(const vector<Package>& listaPaquetes) {
-    cout << setfill('-') << setw(120) << "" << "\n";
-    cout << left << setfill(' ')
-         << "|" << setw(10) << "ID"
-         << "|" << setw(10) << "Peso(kg)"
-         << "|" << setw(12) << "X Dest"
-         << "|" << setw(12) << "Y Dest"
-         << "|" << setw(12) << "Estado"
-         << "|" << setw(12) << "Hora Salida"
-         << "|" << setw(12) << "Hora Llegada" << "|\n";
-    cout << setfill('-') << setw(120) << "" << "\n";
-
-    const time_t ahora = time(nullptr);
-
-    for (size_t i = 0; i < listaPaquetes.size(); i++) {
-        const Package& paquete = listaPaquetes[i];
-        const string estado = estadoPaquete(paquete);
-        const string horaSalidaStr = formatoTiempo(paquete.horaSalida);
-        const string horaLlegadaStr = horaLlegadaTexto(paquete, drones, ahora);
-
-        cout << left << setfill(' ')
-             << "|" << setw(10) << paquete.id
-             << "|" << setw(10) << paquete.peso
-             << "|" << setw(12) << paquete.xDestino
-             << "|" << setw(12) << paquete.yDestino
-             << "|" << setw(12) << estado
-             << "|" << setw(12) << horaSalidaStr
-             << "|" << setw(12) << horaLlegadaStr << "|\n";
-    }
-    cout << setfill('-') << setw(120) << "" << "\n\n";
 }
 
 void ExportarRegistros()
@@ -548,10 +523,10 @@ void ExportarRegistros()
         return;
     }
 
-    // Encabezado adaptado a la info que tenemos
+    // Encabezado
     file << "TIPO,ID,PesoMax_o_Peso,XDestino_o_Clase,YDestino,Estado,Descripcion_o_Modelo,Velocidad\n";
 
-    // ===== Exportar DRONES desde el vector 'drones' =====
+    // Exportar drones
     for (const auto& d : drones)
     {
         file << "DRON,"
@@ -559,23 +534,23 @@ void ExportarRegistros()
              << d.pesoMaximo << ","
              << d.clase << ","       // XDestino_o_Clase
              << "" << ","            // YDestino (no aplica a dron)
-             << (d.disponible ? "Disponible" : "EnOperacion") << ","
+             << (d.disponible ? "Disponible" : "Ocupado") << ","
              << d.modelo << ","
              << d.velocidad
              << "\n";
     }
 
-    // ===== Exportar PAQUETES desde el vector 'paquetes' =====
+    // Exportar paquetes
     for (const auto& p : paquetes)
     {
         file << "PAQUETE,"
-             << p.id << ","                  // ID = id = numOrden
-             << p.peso << ","                // Peso
-             << p.xDestino << ","            // XDestino
-             << p.yDestino << ","            // YDestino
-             << p.estado << ","              // Estado
-             << p.descripcion << ","         // Descripción
-             << ""                           // Velocidad (no aplica)
+             << p.numOrden << ","
+             << p.peso << ","
+             << p.xDestino << ","
+             << p.yDestino << ","
+             << p.estado << ","
+             << p.descripcion << ","
+             << ""   // Velocidad no aplica
              << "\n";
     }
 
@@ -630,25 +605,16 @@ void ImportarRegistros()
             d.pesoMaximo = campo.empty() ? 0.0 : stod(campo);
             d.cargaMaxima = d.pesoMaximo;
 
-            // clase (char)
+            // clase
             getline(ss, campo, ',');
             d.clase = campo.empty() ? ' ' : campo[0];
 
             // YDestino (no aplica) -> se ignora
             getline(ss, campo, ',');
 
-            // estado / disponible
+            // disponible
             getline(ss, campo, ',');
-            if (campo == "Disponible")
-            {
-                d.disponible = true;
-                d.estado = false;
-            }
-            else
-            {
-                d.disponible = false;
-                d.estado = true;
-            }
+            d.disponible = (campo == "Disponible");
 
             // modelo
             getline(ss, d.modelo, ',');
@@ -657,10 +623,9 @@ void ImportarRegistros()
             getline(ss, campo, ',');
             d.velocidad = campo.empty() ? 0.0 : stod(campo);
 
-            // Guardamos en el vector
+            // Guardamos
             drones.push_back(d);
 
-            // Actualizar nextIdDron
             if (d.id >= nextIdDron)
                 nextIdDron = d.id + 1;
         }
@@ -669,10 +634,9 @@ void ImportarRegistros()
             Package* p = new Package;
             string campo;
 
-            // ID y numOrden
+            // numOrden
             getline(ss, campo, ',');
-            p->id = campo.empty() ? 0 : stoi(campo);
-            p->numOrden = p->id;
+            p->numOrden = campo.empty() ? 0 : stoi(campo);
 
             // peso
             getline(ss, campo, ',');
@@ -692,17 +656,15 @@ void ImportarRegistros()
             // descripcion
             getline(ss, p->descripcion, ',');
 
-            // velocidad (no aplica para paquete) -> ignoramos campo final
+            // velocidad (no aplica) -> ignoramos
             getline(ss, campo, ',');
 
-            // Rellenar campos adicionales
             p->tiempoCreacion = Clock::now();
             p->horaSalida = 0;
             p->horaLlegada = 0;
             p->entregado = (p->estado == "entregado" || p->estado == "Entregado");
             p->dronAsignado = -1;
 
-            // Insertar en vector
             paquetes.push_back(*p);
 
             // Insertar en lista doble (al final)
@@ -718,13 +680,11 @@ void ImportarRegistros()
 
             tailPackages = nuevo;
 
-            // Actualizar nextnumOrden
-            if (p->id >= nextnumOrden)
-                nextnumOrden = p->id + 1;
+            if (p->numOrden >= nextnumOrden)
+                nextnumOrden = p->numOrden + 1;
         }
         else
         {
-            // Tipo desconocido, lo ignoramos
             continue;
         }
     }
@@ -736,4 +696,110 @@ void ImportarRegistros()
 void FinalizarPrograma()
 {
     cout << "\nSaliendo del programa...\n";
+}
+
+// ===== Funcion MAIN ======
+
+int main()
+{
+    setlocale(LC_ALL, "es_MX.UTF-8");
+    char opcion = '0';
+
+    do {
+        // Actualizar estados en función del tiempo
+        ActualizarDisponibilidadDrones();
+
+        system("cls");
+        cout << "\n=== Menú de opciones ===\n";
+        cout << "1. Habilitar nuevo dron en la red \n";
+        cout << "2. Gestión de paquetes (Crear y administrar) \n";
+        cout << "3. Listado de drones\n";
+        cout << "4. Registro de paquetería\n";
+        cout << "5. Exportar registros (CSV) \n";
+        cout << "6. Importar registros (CSV) \n";
+        cout << "E. Salir del programa \n";
+        cout << "\nEscriba el número de la opción deseada o 'E' para salir: ";
+        
+        char opcion;
+        cin >> opcion;  // lee el primer carácter no espacio
+
+        // Lo convertimos a mayúscula si es letra
+        if (isalpha(static_cast<unsigned char>(opcion))) {
+            opcion = toupper(static_cast<unsigned char>(opcion));
+        }
+
+        // Limpiar el resto de la línea para que no afecte al siguiente getline
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+
+        switch (opcion) {
+            case '1': 
+                AgregarNuevoDron(); 
+                break;
+            case '2':
+            {
+                system("cls");
+                cout << "\n=== Gestión de paquetes ===\n";
+                cout << "1. Crear nuevo paquete\n";
+                cout << "2. Modificar paquete (primeros 4 minutos)\n";
+                cout << "3. Eliminar paquete (primeros 4 minutos)\n";
+                cout << "4. Volver al menú principal\n";
+                cout << "Selecciona una opción: ";
+                
+                char subOpcion;
+                if (!cin.get(subOpcion))
+                    break;
+                    cin.ignore();
+
+                switch (subOpcion)
+                {
+                    case '1':
+                        CrearPaquete(headPackages, tailPackages);
+                        break;
+                    case '2':
+                        ModificarPaquete(headPackages, tailPackages);
+                        break;
+                    case '3':
+                    {
+                        cout << "Ingresa el número de orden a eliminar: ";
+                        int numOrden;
+                        cin >> numOrden;
+                        cin.ignore();
+                        EliminarPaquete(headPackages, tailPackages, numOrden);
+                        break;
+                    }
+                    case '4':
+                        break;
+                    default:
+                        cout << "Opción inválida.\n";
+                        system("pause");
+                        break;
+                }
+                system("pause");
+                break;
+            }
+            case '3': ListarDrones(drones);
+                system("pause"); 
+                    break;
+            case '4': ListarPaquetes(paquetes);
+                system("pause");
+                break;
+            case '5': ExportarRegistros();
+                system("pause");
+                break;
+            case '6': ImportarRegistros();
+                system("pause");
+                break;
+            case 'E': FinalizarPrograma();
+                break;
+            default:
+                cout << "Opción inválida. Por favor, seleccione una opción del menú.\n";
+                system("pause");
+                break;
+        }
+
+    } while (opcion != 'E');
+
+    LiberarPaquetes(headPackages, tailPackages);
+    return 0;
 }
