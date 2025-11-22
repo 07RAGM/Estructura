@@ -166,7 +166,7 @@ void LiberarPaquetes(Node*& head, Node*& tail)
     paquetes.clear();
 }
 
-// ============= DRONES / PAQUETES ==========
+// =================== LÓGICA DRONES / PAQUETES ===================
 
 void ActualizarDisponibilidadDrones()
 {
@@ -698,44 +698,46 @@ void FinalizarPrograma()
     cout << "\nSaliendo del programa...\n";
 }
 
-// ===== Funcion MAIN ======
 
-int main()
-{
+// =================== FUNCIÓN PRINCIPAL ===================
+ int main() {
     setlocale(LC_ALL, "es_MX.UTF-8");
     char opcion = '0';
 
-    do {
-        // Actualizar estados en función del tiempo
+    do
+    {
+        // Actualizar estados de drones y paquetes según el tiempo y recorridos
         ActualizarDisponibilidadDrones();
 
         system("cls");
         cout << "\n=== Menú de opciones ===\n";
-        cout << "1. Habilitar nuevo dron en la red \n";
-        cout << "2. Gestión de paquetes (Crear y administrar) \n";
+        cout << "1. Habilitar nuevo dron en la red\n";
+        cout << "2. Gestión de paquetes (Crear y administrar)\n";
         cout << "3. Listado de drones\n";
         cout << "4. Registro de paquetería\n";
-        cout << "5. Exportar registros (CSV) \n";
-        cout << "6. Importar registros (CSV) \n";
-        cout << "E. Salir del programa \n";
+        cout << "5. Exportar registros (CSV)\n";
+        cout << "6. Importar registros (CSV)\n";
+        cout << "E. Salir del programa\n";
         cout << "\nEscriba el número de la opción deseada o 'E' para salir: ";
-        
-        char opcion;
-        cin >> opcion;  // lee el primer carácter no espacio
 
-        // Lo convertimos a mayúscula si es letra
+        if (!(cin >> opcion)) {
+            break;
+        }
+
+        // Si es letra, convertirla a mayúscula 
         if (isalpha(static_cast<unsigned char>(opcion))) {
             opcion = toupper(static_cast<unsigned char>(opcion));
         }
 
-        // Limpiar el resto de la línea para que no afecte al siguiente getline
+        // Limpiar resto de la línea antes de siguientes lecturas con getline
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-
-        switch (opcion) {
-            case '1': 
-                AgregarNuevoDron(); 
+        switch (opcion)
+        {
+            case '1':
+                AgregarNuevoDron();
                 break;
+
             case '2':
             {
                 system("cls");
@@ -747,9 +749,10 @@ int main()
                 cout << "Selecciona una opción: ";
                 
                 char subOpcion;
-                if (!cin.get(subOpcion))
+                if (!(cin >> subOpcion)) {
                     break;
-                    cin.ignore();
+                }
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
                 switch (subOpcion)
                 {
@@ -762,36 +765,47 @@ int main()
                     case '3':
                     {
                         cout << "Ingresa el número de orden a eliminar: ";
-                        int numOrden;
-                        cin >> numOrden;
-                        cin.ignore();
-                        EliminarPaquete(headPackages, tailPackages, numOrden);
+                        int numeroOrden;
+                        cin >> numeroOrden;
+                        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                        EliminarPaquete(headPackages, tailPackages, numeroOrden);
                         break;
                     }
                     case '4':
+                        // Solo regresa al menú principal
                         break;
                     default:
                         cout << "Opción inválida.\n";
-                        system("pause");
                         break;
                 }
                 system("pause");
                 break;
             }
-            case '3': ListarDrones(drones);
-                system("pause"); 
-                    break;
-            case '4': ListarPaquetes(paquetes);
+
+            case '3':
+                ListarDrones(drones);
                 system("pause");
                 break;
-            case '5': ExportarRegistros();
+
+            case '4':
+                ListarPaquetes(paquetes);
                 system("pause");
                 break;
-            case '6': ImportarRegistros();
+
+            case '5':
+                ExportarRegistros();
                 system("pause");
                 break;
-            case 'E': FinalizarPrograma();
+
+            case '6':
+                ImportarRegistros();
+                system("pause");
                 break;
+
+            case 'E':
+                FinalizarPrograma();
+                break;
+
             default:
                 cout << "Opción inválida. Por favor, seleccione una opción del menú.\n";
                 system("pause");
@@ -800,6 +814,7 @@ int main()
 
     } while (opcion != 'E');
 
+    // Liberar memoria antes de salir
     LiberarPaquetes(headPackages, tailPackages);
     return 0;
 }
