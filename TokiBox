@@ -62,7 +62,6 @@ int nextNumeroOrden = 1;            // Siguiente número de orden de paquete
 
 // =================== FUNCIONES AUXILIARES ===================
 
-const double Factor_distancia = 0.1; // Factor para reducir tiempo de simulacion
 // Convierte un time_t a texto "HH:MM:SS"
 string formatoTiempo(time_t t) {
     if (t <= 0) return "—";
@@ -83,56 +82,103 @@ string estadoPaquete(const Package& paquete) {
     return "En proceso";
 }
 
-// Calcula/describe la hora de llegada o el estado del paquete
-string horaLlegadaTexto(const Package& paquete, const vector<drone>& listaDrones, time_t ahora) {
-    if (paquete.entregado) return formatoTiempo(paquete.horaLlegada);
+// Segundos que faltan para que un dron regrese a base (ida+vuelta)
+// Si <= 0, en teoría ya debería haber regresado.
+int segundosParaRegresar(const Package* paquete, const drone& d, time_t ahora)
+{
+    if (!paquete) return -1;
+    if (paquete->horaSalida == 0 || d.velocidad <= 0.0) return -1;
 
-    if (paquete.dronAsignado >= 0 && paquete.dronAsignado < (int)listaDrones.size()) {
-        const drone& d = listaDrones[paquete.dronAsignado];
-        if (d.velocidad > 0.0 && paquete.horaSalida > 0) {
-            const double distKm = distanciaKm(paquete.xDestino, paquete.yDestino)* Factor_distancia;
-            const double tiempoSeg = (distKm / d.velocidad) * 3600.0;
-            const time_t eta = paquete.horaSalida + (time_t)llround(tiempoSeg);
-            return (ahora >= eta) ? formatoTiempo(eta) : "En proceso";
-        } else {
-            return "En proceso";
+    double distKm = distanciaKm(paquete->xDestino, paquete->yDestino);
+    double tiempoIdaSeg = (distKm / d.velocidad) * 3600.0;
+
+    time_t tRegreso = paquete->horaSalida + (time_t)llround(2 * tiempoIdaSeg);
+    int restantes = (int)difftime(tRegreso, ahora);
+    return restantes;
+}
+
+// Determina el estado actual del dron: Disponible / Programado / En camino / De regreso / Ocupado
+string estadoDronTexto(const drone& d, int indiceDron)
+{
+    time_t ahora = time(nullptr);
+
+    // Buscar si hay algún paquete asociado a este dron
+    const Package* pEncontrado = nullptr;
+    Node* actual = headPackages;
+    while (actual != nullptr) {
+        Package* p = actual->paqueteData;
+        if (p && p->dronAsignado == indiceDron && p->horaSalida > 0) {
+            pEncontrado = p;
+            break;
         }
+        actual = actual->next;
     }
-    return "Sin dron asignado";
+
+    if (!pEncontrado) {
+        return d.disponible ? "Disponible" : "Ocupado";
+    }
+
+    const Package& p = *pEncontrado;
+
+    if (d.velocidad <= 0.0) {
+        return d.disponible ? "Disponible" : "Ocupado";
+    }
+
+    double distKm = distanciaKm(p.xDestino, p.yDestino);
+    double tiempoIdaSeg = (distKm / d.velocidad) * 3600.0;
+
+    time_t tSalida  = p.horaSalida;
+    time_t tLlegada = tSalida + (time_t)llround(tiempoIdaSeg);
+    time_t tRegreso = tSalida + (time_t)llround(2 * tiempoIdaSeg);
+
+    if (ahora < tSalida)      return "Programado";
+    else if (ahora < tLlegada) return "En camino";
+    else if (ahora < tRegreso) return "De regreso";
+    else                      return d.disponible ? "Disponible" : "Ocupado";
 }
 
 // Muestra la tabla con todos los drones registrados
 void ListarDrones(const vector<drone>& listaDrones) {
-    cout << setfill('-') << setw(61) << "" << "\n";
+    cout << setfill('-') << setw(90) << "" << "\n";
     cout << left << setfill(' ')
-         << "|" << setw(12) << "ID"
-         << "|" << setw(18) << "Velocidad(km/h)"
+         << "|" << setw(10) << "ID"
+         << "|" << setw(16) << "Velocidad(km/h)"
          << "|" << setw(14) << "CargaMax(kg)"
-         << "|" << setw(12) << "Disponible" << "|\n";
-    cout << setfill('-') << setw(61) << "" << "\n";
+         << "|" << setw(14) << "Disponible"
+         << "|" << setw(20) << "Estado viaje"
+         << "|\n";
+    cout << setfill('-') << setw(90) << "" << "\n";
 
     for (size_t i = 0; i < listaDrones.size(); i++) {
+        const drone& d = listaDrones[i];
+        string disponibleTxt = d.disponible ? "Si" : "No";
+        string estadoTxt = estadoDronTexto(d, (int)i);
+
         cout << left << setfill(' ')
-             << "|" << setw(12) << listaDrones[i].id
-             << "|" << setw(18) << listaDrones[i].velocidad
-             << "|" << setw(14) << listaDrones[i].pesoMaximo
-             << "|" << setw(12) << (listaDrones[i].disponible ? "Sí" : "No") << "|\n";
+             << "|" << setw(10) << d.id
+             << "|" << setw(16) << d.velocidad
+             << "|" << setw(14) << d.pesoMaximo
+             << "|" << setw(14) << disponibleTxt
+             << "|" << setw(20) << estadoTxt
+             << "|\n";
     }
-    cout << setfill('-') << setw(61) << "" << "\n\n";
+    cout << setfill('-') << setw(90) << "" << "\n\n";
 }
 
 // Muestra la tabla con todos los paquetes registrados
 void ListarPaquetes(const vector<Package>& listaPaquetes) {
-    cout << setfill('-') << setw(96) << "" << "\n";
+    cout << setfill('-') << setw(140) << "" << "\n";
     cout << left << setfill(' ')
-         << "|" << setw(10) << "Orden"
+         << "|" << setw(8)  << "Orden"
          << "|" << setw(10) << "Peso(kg)"
-         << "|" << setw(12) << "X Dest"
-         << "|" << setw(12) << "Y Dest"
-         << "|" << setw(20) << "Estado"
-         << "|" << setw(12) << "Hora Salida"
-         << "|" << setw(12) << "Hora Llegada" << "|\n";
-    cout << setfill('-') << setw(96) << "" << "\n";
+         << "|" << setw(10) << "X Dest"
+         << "|" << setw(10) << "Y Dest"
+         << "|" << setw(10) << "DronID"
+         << "|" << setw(14) << "Estado"
+         << "|" << setw(14) << "Hora Salida"
+         << "|" << setw(14) << "Hora Llegada"
+         << "|\n";
+    cout << setfill('-') << setw(140) << "" << "\n";
 
     const time_t ahora = time(nullptr);
 
@@ -142,16 +188,23 @@ void ListarPaquetes(const vector<Package>& listaPaquetes) {
         const string horaSalidaStr = formatoTiempo(paquete.horaSalida);
         const string horaLlegadaStr = horaLlegadaTexto(paquete, drones, ahora);
 
+        string dronIdTxt = "-";
+        if (paquete.dronAsignado >= 0 && paquete.dronAsignado < (int)drones.size()) {
+            dronIdTxt = to_string(drones[paquete.dronAsignado].id);
+        }
+
         cout << left << setfill(' ')
-             << "|" << setw(10) << paquete.numeroOrden
+             << "|" << setw(8)  << paquete.numeroOrden
              << "|" << setw(10) << paquete.peso
-             << "|" << setw(12) << paquete.xDestino
-             << "|" << setw(12) << paquete.yDestino
-             << "|" << setw(12) << estado
-             << "|" << setw(12) << horaSalidaStr
-             << "|" << setw(12) << horaLlegadaStr << "|\n";
+             << "|" << setw(10) << paquete.xDestino
+             << "|" << setw(10) << paquete.yDestino
+             << "|" << setw(10) << dronIdTxt
+             << "|" << setw(14) << estado
+             << "|" << setw(14) << horaSalidaStr
+             << "|" << setw(14) << horaLlegadaStr
+             << "|\n";
     }
-    cout << setfill('-') << setw(88) << "" << "\n\n";
+    cout << setfill('-') << setw(140) << "" << "\n\n";
 }
 
 // Edad del paquete en segundos desde su creación
@@ -177,8 +230,8 @@ void LiberarPaquetes(Node*& head, Node*& tail)
 }
 
 // =================== LÓGICA DRONES / PAQUETES ===================
-// Actualiza si paquetes ya se entregaron y si drones ya regresaron a base
 
+// Revisa paquetes pendientes y asigna drones disponibles
 void RevisarListaEspera()
 {   
     time_t ahora = time(nullptr);
@@ -232,11 +285,9 @@ void ActualizarDisponibilidadDrones()
         Package* p = actual->paqueteData;
         if (p && p->dronAsignado >= 0 && p->dronAsignado < (int)drones.size() && p->horaSalida > 0)
         {
-            // Si todavía no llega la hora de salida, no se mueve ni el dron ni el paquete
+            // si todavía no llega la hora de salida, no se mueve ni el dron ni el paquete
             if (ahora < p->horaSalida)
             {
-
-                p->estado = "Programado";
                 actual = actual->next;
                 continue;
             }
@@ -245,7 +296,7 @@ void ActualizarDisponibilidadDrones()
 
             if (d.velocidad > 0.0)
             {
-                double distKm = distanciaKm(p->xDestino, p->yDestino)* Factor_distancia;
+                double distKm = distanciaKm(p->xDestino, p->yDestino);
                 double tiempoIdaSeg = (distKm / d.velocidad) * 3600.0;
 
                 time_t tLlegada = p->horaSalida + (time_t)llround(tiempoIdaSeg);
@@ -266,8 +317,6 @@ void ActualizarDisponibilidadDrones()
                     p->dronAsignado = -1;
                 }
 
-                RevisarListaEspera();
-
                 // Sincronizar cambios con el vector 'paquetes'
                 for (auto &paqVec : paquetes)
                 {
@@ -281,6 +330,9 @@ void ActualizarDisponibilidadDrones()
         }
         actual = actual->next;
     }
+
+    // Después de actualizar, intentar asignar paquetes pendientes
+    RevisarListaEspera();
 }
 
 // Alta de nuevo dron en el sistema
@@ -303,9 +355,20 @@ void AgregarNuevoDron()
     cout << "Modelo: ";
     getline(cin, dronNuevo.modelo);
 
-    cout << "Carga máxima que puede cargar el dron (kg): ";
-    cin >> dronNuevo.pesoMaximo;
-    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+    // Lectura robusta de la carga máxima
+    double carga;
+    while (true) {
+        cout << "Carga máxima que puede cargar el dron (kg): ";
+        if (!(cin >> carga)) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            cout << "Entrada inválida. Introduce un número (ej. 5.5).\n";
+        } else {
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            break;
+        }
+    }
+    dronNuevo.pesoMaximo = carga;
 
     if (dronNuevo.pesoMaximo >= 1 && dronNuevo.pesoMaximo <= 5)
         dronNuevo.clase = 'C';
@@ -326,12 +389,14 @@ void AgregarNuevoDron()
     drones.push_back(dronNuevo);
 
     cout << "\nDron agregado exitosamente.\n";
+
+    // Intentar asignar este nuevo dron a paquetes pendientes
     RevisarListaEspera();
 
     system("pause");
 }
 
-// Crea un nuevo paquete y asigna un dron disponible si hay
+// Crea un nuevo paquete, lo valida y asigna un dron si hay
 void CrearPaquete(Node*& head, Node*& tail)
 {
     Package* paqueteNuevo = new Package;
@@ -362,7 +427,25 @@ void CrearPaquete(Node*& head, Node*& tail)
 
     paqueteNuevo->estado = "pendiente";
 
-    // Busca dron disponible con capacidad suficiente
+    // 🔴 Validar: si hay drones en el sistema y ninguno puede con el peso, rechazar
+    if (!drones.empty()) {
+        bool algunPuede = false;
+        for (const auto& d : drones) {
+            if (d.pesoMaximo >= paqueteNuevo->peso) {
+                algunPuede = true;
+                break;
+            }
+        }
+        if (!algunPuede) {
+            cout << "\nNo existe ningún dron con capacidad para este paquete.\n";
+            cout << "El paquete ha sido RECHAZADO.\n";
+            delete paqueteNuevo;
+            system("pause");
+            return;
+        }
+    }
+
+    // Buscar dron disponible con capacidad suficiente
     int indiceDronAsignado = -1;
     for (int i = 0; i < (int)drones.size(); ++i)
     {
@@ -415,8 +498,7 @@ void CrearPaquete(Node*& head, Node*& tail)
     cout << "\nPaquete creado exitosamente.\n";
 }
 
-
-// Modifica datos del paquete si no pasan de 4 minutos, AHORA 1 minuto
+// Modifica datos del paquete si no pasan de 1 minuto
 void ModificarPaquete(Node*& head, Node*& tail)
 {    
     (void)tail;
@@ -436,12 +518,12 @@ void ModificarPaquete(Node*& head, Node*& tail)
         if (actual->paqueteData->numeroOrden == numeroOrden)
         {
             int edadSegundos = GetPackageAgeInSeconds(actual->paqueteData);
-            if (edadSegundos > 60)   // CAMBIO: antes 240
+            if (edadSegundos > 60)
             {
                 cout << "\nNo se puede modificar este paquete. Ha pasado más de 1 minuto desde su creación.\n";
                 return;
             }
-            if (edadSegundos > 30)   // CAMBIO: antes 120
+            if (edadSegundos > 30)
             {
                 cout << "\nAdvertencia: Este paquete será enviado en los próximos 30 segundos.\n";
             }
@@ -523,7 +605,7 @@ void ModificarPaquete(Node*& head, Node*& tail)
     cout << "Paquete con orden " << numeroOrden << " no encontrado.\n";
 }
 
-// Elimina un paquete dentro de los primeros 4 minutos. AHORA 1 minuto
+// Elimina un paquete dentro del primer minuto
 void EliminarPaquete(Node*& head, Node*& tail, int numeroOrden)
 {
     Node* actual = head;
@@ -532,16 +614,15 @@ void EliminarPaquete(Node*& head, Node*& tail, int numeroOrden)
         if (actual->paqueteData->numeroOrden == numeroOrden)
         {
             int edadSegundos = GetPackageAgeInSeconds(actual->paqueteData);
-            if (edadSegundos > 60)   // CAMBIO: antes 240
+            if (edadSegundos > 60)
             {
                 cout << "No se puede eliminar este paquete. Ha pasado más de 1 minuto.\n";
                 return;
             }
-            if (edadSegundos > 30)   // CAMBIO: antes 120
+            if (edadSegundos > 30)
             {
                 cout << "Advertencia: Este paquete será enviado en los próximos 30 segundos.\n";
             }
-
 
             if (actual->prev) actual->prev->next = actual->next;
             else head = actual->next;
@@ -568,36 +649,6 @@ void EliminarPaquete(Node*& head, Node*& tail, int numeroOrden)
     }
     cout << "Paquete con orden " << numeroOrden << " no encontrado.\n";
 }
-//elimina dron
-void EliminarDron()
-{
-    if (drones.empty()) {
-        cout << "No hay drones registrados.\n";
-        return;
-    }
-
-    cout << "Ingresa el ID del dron a eliminar: ";
-    int id;
-    cin >> id;
-    cin.ignore();
-
-    for (size_t i = 0; i < drones.size(); ++i) {
-        if (drones[i].id == id) {
-
-        
-            if (!drones[i].disponible) {
-                cout << "No se puede eliminar el dron ID " << id << " porque está en misión.\n";
-                return;
-            }
-            drones.erase(drones.begin() + i);
-            cout << "Dron eliminado correctamente.\n";
-            return;
-        }
-    }
-
-    cout << "No se encontró un dron con ID " << id << ".\n";
-}
-
 
 // Lista paquetes usando el vector
 void LeerPaquetes(Node* head)
@@ -606,19 +657,64 @@ void LeerPaquetes(Node* head)
     ListarPaquetes(paquetes);
 }
 
-// Exporta drones y paquetes a un archivo CSV
+// Exporta drones y paquetes a un archivo CSV, con candado de regreso a base
 void ExportarRegistros()
 {
-    for (const auto& p : paquetes)
+    time_t ahora = time(nullptr);
+
+    // 1) Verificar si hay drones que todavía no regresan a la base
+    Node* actual = headPackages;
+    while (actual != nullptr)
     {
-        if (!p.entregado && p.estado != "entregado" && p.estado != "Entregado")
+        Package* p = actual->paqueteData;
+        if (p && p->dronAsignado >= 0 && p->dronAsignado < (int)drones.size())
+        {
+            drone& d = drones[p->dronAsignado];
+
+            if (!d.disponible)
+            {
+                int restantes = segundosParaRegresar(p, d, ahora);
+
+                cout << "\nNo se puede exportar.\n";
+                cout << "El dron ID " << d.id << " aún no regresa a la base (0,0).\n";
+
+                if (restantes > 0)
+                {
+                    int minutos = restantes / 60;
+                    int segundos = restantes % 60;
+
+                    cout << "Tiempo estimado para que regrese: ";
+                    if (minutos > 0)
+                        cout << minutos << " min ";
+                    cout << segundos << " s.\n";
+                }
+                else
+                {
+                    cout << "Según el cálculo, el dron ya debería haber regresado.\n"
+                         << "Actualiza el estado (o revisa tiempos) antes de exportar.\n";
+                }
+
+                return; // Bloqueamos exportación
+            }
+        }
+        actual = actual->next;
+    }
+
+    // 2) Verificar que no haya paquetes pendientes de entrega
+    actual = headPackages;
+    while (actual != nullptr)
+    {
+        Package* p = actual->paqueteData;
+        if (p && !p->entregado && p->estado != "entregado" && p->estado != "Entregado")
         {
             cout << "\nNo se puede exportar.\n"
                  << "Hay paquetes pendientes de entrega.\n";
             return;
         }
+        actual = actual->next;
     }
 
+    // 3) Si llegamos aquí, todo está libre y entregado → exportamos
     ofstream file("registros.csv");
 
     if (!file)
@@ -629,7 +725,7 @@ void ExportarRegistros()
 
     file << "TIPO,ID,PesoMax_o_Peso,XDestino_o_Clase,YDestino,Estado,Descripcion_o_Modelo,Velocidad\n";
 
-    // Drones
+    // Exportar drones
     for (const auto& d : drones)
     {
         file << "DRON,"
@@ -643,7 +739,7 @@ void ExportarRegistros()
              << "\n";
     }
 
-    // Paquetes
+    // Exportar paquetes
     for (const auto& p : paquetes)
     {
         file << "PAQUETE,"
@@ -665,10 +761,6 @@ void ExportarRegistros()
 void ImportarRegistros()
 {
     ifstream file("registros.csv");
-    if (!drones.empty() || !paquetes.empty()) {
-    cout << "No se puede importar: la operación ya ha comenzado.\n";
-    return;
-    }
 
     if (!file)
     {
@@ -802,9 +894,8 @@ int main()
         cout << "2. Gestión de paquetes (Crear y administrar)\n";
         cout << "3. Listado de drones\n";
         cout << "4. Registro de paquetería\n";
-        cout << "5. Eliminar dron\n";
-        cout << "6. Exportar registros (CSV)\n";
-        cout << "7. Importar registros (CSV)\n";
+        cout << "5. Exportar registros (CSV)\n";
+        cout << "6. Importar registros (CSV)\n";
         cout << "E. Salir del programa\n";
         cout << "\nEscriba el número de la opción deseada o 'E' para salir: ";
 
@@ -829,8 +920,8 @@ int main()
                 system("cls");
                 cout << "\n=== Gestión de paquetes ===\n";
                 cout << "1. Crear nuevo paquete\n";
-                cout << "2. Modificar paquete (primeros 4 minutos)\n";
-                cout << "3. Eliminar paquete (primeros 4 minutos)\n";
+                cout << "2. Modificar paquete (primer minuto)\n";
+                cout << "3. Eliminar paquete (primer minuto)\n";
                 cout << "4. Volver al menú principal\n";
                 cout << "Selecciona una opción: ";
                 
@@ -877,17 +968,13 @@ int main()
                 ListarPaquetes(paquetes);
                 system("pause");
                 break;
-            case '5':
-                EliminarDron();
-                system("pause");
-                break;
 
-            case '6':
+            case '5':
                 ExportarRegistros();
                 system("pause");
                 break;
 
-            case '7':
+            case '6':
                 ImportarRegistros();
                 system("pause");
                 break;
