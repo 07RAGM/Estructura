@@ -191,6 +191,17 @@ void RevisarListaEspera()
                     p.horaSalida = ahora + 60; // sale en 1 minuto
                     p.estado = "Programado";
                     cout << "Paquete " << p.numeroOrden << " asignado al dron ID " << drones[i].id << " desde lista de espera.\n";
+
+                    // 🔹 Sincroniza con lista enlazada
+                    Node* actual = headPackages;
+                    while(actual != nullptr) {
+                        if (actual->paqueteData->numeroOrden == p.numeroOrden) {
+                            *(actual->paqueteData) = p;  // copia los cambios
+                            break;
+                        }
+                        actual = actual->next;
+                    }
+
                     break; 
                 }
             }
