@@ -178,36 +178,49 @@ void LiberarPaquetes(Node*& head, Node*& tail)
 
 // =================== LÓGICA DRONES / PAQUETES ===================
 // Actualiza si paquetes ya se entregaron y si drones ya regresaron a base
+
 void RevisarListaEspera()
-{
-    for (auto& p : paquetes) {
-        if (p.dronAsignado == -1 && !p.entregado) {
-          
-            for (size_t i = 0; i < drones.size(); ++i) {
-                if (drones[i].disponible && drones[i].pesoMaximo >= p.peso) {
-                    p.dronAsignado = i;
-                    drones[i].disponible = false;
-                    time_t ahora = time(nullptr);
-                    p.horaSalida = ahora + 60; // sale en 1 minuto
-                    p.estado = "Programado";
-                    cout << "Paquete " << p.numeroOrden << " asignado al dron ID " << drones[i].id << " desde lista de espera.\n";
+{   
+    time_t ahora = time(nullptr);
 
-               
-                    Node* actual = headPackages;
-                    while(actual != nullptr) {
-                        if (actual->paqueteData->numeroOrden == p.numeroOrden) {
-                            *(actual->paqueteData) = p;  // copia los cambios
-                            break;
-                        }
-                        actual = actual->next;
-                    }
-
-                    break; 
+    Node* actual = headPackages;
+    while (actual != nullptr) {
+        Package* p = actual->paqueteData;
+        // Solo paquetes no entregados y sin dron asignado
+        if (p && !p->entregado && p->dronAsignado == -1) {
+            int indiceDronAsignado = -1;
+            // Buscar un dron disponible con capacidad suficiente
+            for (int i = 0; i < (int)drones.size(); ++i) {
+                if (drones[i].disponible && drones[i].pesoMaximo >= p->peso) {
+                    indiceDronAsignado = i;
+                    break; // tomamos el primero que cumpla
                 }
             }
+
+            if (indiceDronAsignado != -1) {
+                p->dronAsignado = indiceDronAsignado;
+                p->horaSalida = ahora + 60;     // sale 1 minuto después
+                p->estado = "Programado";
+                drones[indiceDronAsignado].disponible = false;
+
+                // Sincronizar con el vector 'paquetes'
+                for (auto &paqVec : paquetes) {
+                    if (paqVec.numeroOrden == p->numeroOrden) {
+                        paqVec = *p;
+                        break;
+                    }
+                }
+
+                cout << "\nPaquete " << p->numeroOrden
+                     << " asignado al dron ID " << drones[indiceDronAsignado].id
+                     << " (asignación diferida).\n";
+            }
         }
+
+        actual = actual->next;
     }
 }
+
 // Actualiza si paquetes ya se entregaron y si drones ya regresaron a base
 void ActualizarDisponibilidadDrones()
 {
