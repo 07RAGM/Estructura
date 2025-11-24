@@ -1,4 +1,4 @@
-// VERSION CON CAMBIOS. SIN TODAS LAS MODIFICACIONES DE DANI
+// VERSION PRELIMINAR
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
@@ -433,24 +433,13 @@ void AgregarNuevoDron()
 
     cout << "\n=== Ingreso de un nuevo dron al sistema ===\n";
     cout << "ID: " << dronNuevo.id << "\n";
-
+    
     cout << "Modelo: ";
     getline(cin, dronNuevo.modelo);
 
-    // Lectura robusta de la carga máxima
-    double carga;
-    while (true) {
-        cout << "Carga máxima que puede cargar el dron (kg): ";
-        if (!(cin >> carga)) {
-            cin.clear();
-            cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            cout << "Entrada inválida. Introduce un número (ej. 5.5).\n";
-        } else {
-            cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            break;
-        }
-    }
-    dronNuevo.pesoMaximo = carga;
+    dronNuevo.pesoMaximo = ObtenerNumeroPositivo(
+        "Carga máxima que puede cargar el dron (kg): "
+    );
 
     if (dronNuevo.pesoMaximo >= 1 && dronNuevo.pesoMaximo <= 5)
         dronNuevo.clase = 'C';
@@ -465,14 +454,13 @@ void AgregarNuevoDron()
         return;
     }
 
-    dronNuevo.velocidad = 50.0;                 // km/h fija por ahora
+    dronNuevo.velocidad = 50.0;                 
     dronNuevo.disponible = true;
 
     drones.push_back(dronNuevo);
 
     cout << "\nDron agregado exitosamente.\n";
 
-    // Intentar asignar este nuevo dron a paquetes pendientes
     RevisarListaEspera();
 
     system("pause");
@@ -520,14 +508,10 @@ void CrearPaquete(Node*& head, Node*& tail)
 
     cout << "\n=== Crear nuevo paquete ===\n";
     cout << "Número de orden asignado automáticamente: " << paqueteNuevo->numeroOrden << "\n";
-
-    cout << "Peso del paquete (kg): ";
-    while (!(cin >> paqueteNuevo->peso)) {
-        cin.clear();
-        cin.ignore(numeric_limits<streamsize>::max(), '\n');
-        cout << "Entrada inválida. Introduce un número: ";
-    }
-    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+    
+    // Validar peso positivo, no letras ni negativos
+    // Es como usar getline + stringstream, pero más directo
+    paqueteNuevo->peso = ObtenerNumeroPositivo("Peso del paquete (kg): ");
 
     cout << "Destino X (coordenada): ";
     while (!(cin >> paqueteNuevo->xDestino)) {
