@@ -82,19 +82,35 @@ string estadoPaquete(const Package& paquete) {
     return "En proceso";
 }
 
-// Segundos que faltan para que un dron regrese a base (ida+vuelta)
-// Si <= 0, en teoría ya debería haber regresado.
-int segundosParaRegresar(const Package* paquete, const drone& d, time_t ahora)
-{
-    if (!paquete) return -1;
-    if (paquete->horaSalida == 0 || d.velocidad <= 0.0) return -1;
+// Texto para la hora de llegada estimada o real del paquete
+string horaLlegadaTexto(const Package& paquete, const vector<drone>& listaDrones, time_t ahora) {
+    // Si ya fue entregado y tiene hora de llegada, la mostramos
+    if (paquete.entregado && paquete.horaLlegada > 0) {
+        return formatoTiempo(paquete.horaLlegada);
+    }
 
-    double distKm = distanciaKm(paquete->xDestino, paquete->yDestino);
-    double tiempoIdaSeg = (distKm / d.velocidad) * 3600.0;
+    // Si tiene dron asignado y una hora de salida programada, podemos estimar
+    if (paquete.dronAsignado >= 0 &&
+        paquete.dronAsignado < (int)listaDrones.size() &&
+        paquete.horaSalida > 0)
+    {
+        const drone& d = listaDrones[paquete.dronAsignado];
+        if (d.velocidad > 0.0) {
+            double distKm = distanciaKm(paquete.xDestino, paquete.yDestino);
+            double tiempoIdaSeg = (distKm / d.velocidad) * 3600.0;
+            time_t tLlegada = paquete.horaSalida + (time_t)llround(tiempoIdaSeg);
 
-    time_t tRegreso = paquete->horaSalida + (time_t)llround(2 * tiempoIdaSeg);
-    int restantes = (int)difftime(tRegreso, ahora);
-    return restantes;
+            // Si ya pasó la hora estimada, mostramos esa hora
+            if (ahora >= tLlegada) {
+                return formatoTiempo(tLlegada);
+            } else {
+                return "En ruta";
+            }
+        }
+    }
+
+    // Si no tenemos suficiente info
+    return "—";
 }
 
 // Determina el estado actual del dron: Disponible / Programado / En camino / De regreso / Ocupado
@@ -314,7 +330,7 @@ void ActualizarDisponibilidadDrones()
                 if (!d.disponible && ahora >= tRegreso)
                 {
                     d.disponible = true;
-                    p->dronAsignado = -1;
+                    // NO borramos p->dronAsignado: queda como registro histórico
                 }
 
                 // Sincronizar cambios con el vector 'paquetes'
@@ -411,15 +427,27 @@ void CrearPaquete(Node*& head, Node*& tail)
     cout << "Número de orden asignado automáticamente: " << paqueteNuevo->numeroOrden << "\n";
     
     cout << "Peso del paquete (kg): ";
-    cin >> paqueteNuevo->peso;
+    while (!(cin >> paqueteNuevo->peso)) {
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cout << "Entrada inválida. Introduce un número: ";
+    }
     cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
     cout << "Destino X (coordenada): ";
-    cin >> paqueteNuevo->xDestino;
+    while (!(cin >> paqueteNuevo->xDestino)) {
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cout << "Entrada inválida. Introduce un entero: ";
+    }
     cin.ignore(numeric_limits<streamsize>::max(), '\n'); 
 
     cout << "Destino Y (coordenada): ";
-    cin >> paqueteNuevo->yDestino;
+    while (!(cin >> paqueteNuevo->yDestino)) {
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cout << "Entrada inválida. Introduce un entero: ";
+    }
     cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
     cout << "Descripción: ";
@@ -427,7 +455,7 @@ void CrearPaquete(Node*& head, Node*& tail)
 
     paqueteNuevo->estado = "pendiente";
 
-    // 🔴 Validar: si hay drones en el sistema y ninguno puede con el peso, rechazar
+    // Validar: si hay drones en el sistema y ninguno puede con el peso, rechazar
     if (!drones.empty()) {
         bool algunPuede = false;
         for (const auto& d : drones) {
@@ -551,7 +579,11 @@ void ModificarPaquete(Node*& head, Node*& tail)
             {
                 case '1':
                     cout << "Nuevo peso (kg): ";
-                    cin >> actual->paqueteData->peso;
+                    while (!(cin >> actual->paqueteData->peso)) {
+                        cin.clear();
+                        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                        cout << "Entrada inválida. Introduce un número: ";
+                    }
                     cin.ignore(numeric_limits<streamsize>::max(), '\n');
                     cout << "Peso actualizado.\n";
                     break;
@@ -569,13 +601,21 @@ void ModificarPaquete(Node*& head, Node*& tail)
                     break;
                 case '4':
                     cout << "Nueva coordenada destino X: ";
-                    cin >> actual->paqueteData->xDestino;
+                    while (!(cin >> actual->paqueteData->xDestino)) {
+                        cin.clear();
+                        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                        cout << "Entrada inválida. Introduce un entero: ";
+                    }
                     cin.ignore(numeric_limits<streamsize>::max(), '\n');
                     cout << "Coordenada X actualizada.\n";
                     break;
                 case '5':
                     cout << "Nueva coordenada destino Y: ";
-                    cin >> actual->paqueteData->yDestino;
+                    while (!(cin >> actual->paqueteData->yDestino)) {
+                        cin.clear();
+                        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                        cout << "Entrada inválida. Introduce un entero: ";
+                    }
                     cin.ignore(numeric_limits<streamsize>::max(), '\n');
                     cout << "Coordenada Y actualizada.\n";
                     break;  
@@ -657,7 +697,7 @@ void LeerPaquetes(Node* head)
     ListarPaquetes(paquetes);
 }
 
-// Exporta drones y paquetes a un archivo CSV, con candado de regreso a base
+// Exporta drones y paquetes a un archivo CSV, con candado simple de regreso a base
 void ExportarRegistros()
 {
     time_t ahora = time(nullptr);
@@ -673,27 +713,8 @@ void ExportarRegistros()
 
             if (!d.disponible)
             {
-                int restantes = segundosParaRegresar(p, d, ahora);
-
                 cout << "\nNo se puede exportar.\n";
                 cout << "El dron ID " << d.id << " aún no regresa a la base (0,0).\n";
-
-                if (restantes > 0)
-                {
-                    int minutos = restantes / 60;
-                    int segundos = restantes % 60;
-
-                    cout << "Tiempo estimado para que regrese: ";
-                    if (minutos > 0)
-                        cout << minutos << " min ";
-                    cout << segundos << " s.\n";
-                }
-                else
-                {
-                    cout << "Según el cálculo, el dron ya debería haber regresado.\n"
-                         << "Actualiza el estado (o revisa tiempos) antes de exportar.\n";
-                }
-
                 return; // Bloqueamos exportación
             }
         }
