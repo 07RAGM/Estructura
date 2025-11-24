@@ -667,12 +667,12 @@ void ModificarPaquete(Node*& head, Node*& tail)
                         break;
 
                     case '2':
-                        actual->paqueteData->xDestino = (int)ObtenerNumero("Nuevo Destino X: ");
+                        actual->paqueteData->xDestino = (double)ObtenerNumero("Nuevo Destino X: ");
                         cout << "\nDestino X actualizado correctamente.\n";
                         break;
 
                     case '3':
-                        actual->paqueteData->yDestino = (int)ObtenerNumero("Nuevo Destino Y: ");
+                        actual->paqueteData->yDestino = (double)ObtenerNumero("Nuevo Destino Y: ");
                         cout << "\nDestino Y actualizado correctamente.\n";
                         break;
 
@@ -1088,4 +1088,3 @@ int main()
     LiberarPaquetes(headPackages, tailPackages);
     return 0;
 }
-
